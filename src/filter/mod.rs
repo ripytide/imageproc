@@ -111,21 +111,44 @@ where
 
             //optimisation: remove allocation when `Pixel::map` allows mapping to a different
             //type
-            #[allow(clippy::unnecessary_to_owned)]
-            let weighted_pixel = window_pixel
-                .channels()
-                .to_vec()
-                .into_iter()
-                .map(move |c| kernel_weight * K::from(c));
-
-            weighted_pixel
+            if P::CHANNEL_COUNT == 1 {
+                [
+                    kernel_weight * K::from(window_pixel.channels()[0]),
+                    K::zero(),
+                    K::zero(),
+                    K::zero(),
+                ]
+            } else if P::CHANNEL_COUNT == 2 {
+                [
+                    kernel_weight * K::from(window_pixel.channels()[0]),
+                    kernel_weight * K::from(window_pixel.channels()[1]),
+                    K::zero(),
+                    K::zero(),
+                ]
+            } else if P::CHANNEL_COUNT == 3 {
+                [
+                    kernel_weight * K::from(window_pixel.channels()[0]),
+                    kernel_weight * K::from(window_pixel.channels()[1]),
+                    kernel_weight * K::from(window_pixel.channels()[2]),
+                    K::zero(),
+                ]
+            } else if P::CHANNEL_COUNT == 4 {
+                [
+                    kernel_weight * K::from(window_pixel.channels()[0]),
+                    kernel_weight * K::from(window_pixel.channels()[1]),
+                    kernel_weight * K::from(window_pixel.channels()[2]),
+                    kernel_weight * K::from(window_pixel.channels()[3]),
+                ]
+            } else {
+                panic!("P::CHANNEL_COUNT must be smaller than or equal to 4");
+            }
         });
 
-    let final_channel_sum = weighted_pixels.fold(
+    let final_channel_sum: [K; 4] = weighted_pixels.fold(
         //optimisation: do this without allocation when `Pixel` gains a method of constant initialization
-        vec![K::zero(); Q::CHANNEL_COUNT as usize],
+        [K::zero(); 4],
         |mut accumulator, weighted_pixel| {
-            for (i, weighted_subpixel) in weighted_pixel.enumerate() {
+            for (i, weighted_subpixel) in weighted_pixel.into_iter().enumerate() {
                 accumulator[i] = accumulator[i] + weighted_subpixel;
             }
 
@@ -133,7 +156,9 @@ where
         },
     );
 
-    *Q::from_slice(&final_channel_sum.into_iter().map(f).collect_vec())
+    let mapped_final = final_channel_sum.map(f);
+
+    *Q::from_slice(&mapped_final[0..Q::CHANNEL_COUNT as usize])
 }
 
 /// Returns 2d correlation of an image. Intermediate calculations are performed
